@@ -1,0 +1,11 @@
+# Code Composer Studio / Eclipse Build Artifacts
+Debug/
+Release/
+*.out
+*.map
+*.obj
+*.d
+
+# OS generated files
+.DS_Store
+Thumbs.db
