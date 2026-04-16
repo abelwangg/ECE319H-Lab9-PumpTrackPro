@@ -42,21 +42,85 @@ uint32_t Random(uint32_t n){
 
 SlidePot Sensor(1500,0); // copy calibration from Lab 7
 
+typedef enum {dead, alive} status_t;
+
+struct sprite {
+  int32_t x;      // x coordinate on screen (0 to 127)
+  int32_t y;      // y coordinate on screen (0 to 159)
+  int32_t vy;     // vertical velocity (how fast it scrolls down)
+  const uint16_t *image; // Pointer to the bitmap array
+  status_t life;  // Is it currently active on screen?
+};
+typedef struct sprite sprite_t;
+
+// Declare our global game objects
+sprite_t Skater;
+sprite_t Obstacles[4]; // Max 4 obstacles on screen at once
+sprite_t EnergyDrink;  // 1 collectible on screen at a time
+
+uint32_t Score = 0;
+uint32_t Lives = 3;
+uint8_t Semaphore = 0; // Flag to trigger LCD update
+
 // games  engine runs at 30Hz
 void TIMG12_IRQHandler(void){uint32_t pos,msg;
-  if((TIMG12->CPU_INT.IIDX) == 1){ // this will acknowledge
+  if((TIMG12->CPU_INT.IIDX) == 1){ // this will acknowledge timer interrupt
     GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
     GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
+
+//this ISR will sample slide-pot to move skater left/right, check buttons for Ollie/Duck commands, 
+//and move obstacles down the screen
+
 // game engine goes here
-    // 1) sample slide pot
-    // 2) read input switches
-    // 3) move sprites
-    // 4) start sounds
+
+    // 1) sample slide pot for skater x position
+    //Sensor.In() returns 12-bit ADC value (0 to 4095)
+    //map 0-4095 to LCD width (0-110, leaving room for sprite width)
+
+    uint32_t adc_val = Sensor.In(); 
+    Skater.x = (110 * adc_val) / 4095;
+
+    // 2) read input switches for jump/duck
+    uint32_t buttons = Switch_In();
+    // Assuming PA28 is bit 3 in your Switch_In return, and PA27 is bit 2
+    bool isJumping = (buttons & 0x08); 
+    bool isDucking = (buttons & 0x04);
+    
+    // Swap skater image based on action (assuming these arrays exist in images.h)
+    if(isJumping) {
+      // Skater.image = SkaterJumpImage;
+    } else if (isDucking) {
+      // Skater.image = SkaterDuckImage;
+    } else {
+      // Skater.image = SkaterNormalImage;
+    }
+
+    // 3) move obstacles (scrolling effect)
+    for(int i = 0; i < 4; i++){
+      if(Obstacles[i].life == alive){
+        Obstacles[i].y += Obstacles[i].vy; // Move down the screen
+        
+        // If it goes off the bottom of the screen, kill it and score a point
+        if(Obstacles[i].y > 159){
+          Obstacles[i].life = dead;
+          Score += 10; 
+        }
+      }
+    }
+
+    // 4) Collision Detection would go here
+    //will write this
+
     // 5) set semaphore
+    Semaphore = 1;
+
     // NO LCD OUTPUT IN INTERRUPT SERVICE ROUTINES
+
+
     GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
   }
 }
+
 uint8_t TExaS_LaunchPadLogicPB27PB26(void){
   return (0x80|((GPIOB->DOUT31_0>>26)&0x03));
 }
@@ -255,8 +319,14 @@ int main5(void){ // final main
 
   while(1){
     // wait for semaphore
-       // clear semaphore
-       // update ST7735R
-    // check for end game or level switch
+    if (Semaphore == 1) {
+      Semaphore = 0;  //clear semaphore
+
+      //call drawing functions here
+      //ST7735_DrawBitMap(Skater.x, skater.y, Skater.image, 18, 18);
+      //loop to draw obstacles.....
+
+    }
   }
 }
+
