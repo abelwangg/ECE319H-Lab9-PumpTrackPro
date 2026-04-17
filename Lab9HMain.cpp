@@ -73,7 +73,8 @@ void TIMG12_IRQHandler(void){uint32_t pos,msg;
 
 // game engine goes here
 
-//commit test
+//commit test by alex
+//commit test by abel
 
     // 1) sample slide pot for skater x position
     //Sensor.In() returns 12-bit ADC value (0 to 4095)
