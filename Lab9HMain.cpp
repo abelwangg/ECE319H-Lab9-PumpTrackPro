@@ -62,6 +62,9 @@ uint32_t Score = 0;
 uint32_t Lives = 3;
 uint8_t Semaphore = 0; // Flag to trigger LCD update
 
+
+
+
 // games  engine runs at 30Hz
 void TIMG12_IRQHandler(void){uint32_t pos,msg;
   if((TIMG12->CPU_INT.IIDX) == 1){ // this will acknowledge timer interrupt
@@ -85,18 +88,22 @@ void TIMG12_IRQHandler(void){uint32_t pos,msg;
 
     // 2) read input switches for jump/duck
     uint32_t buttons = Switch_In();
-    // Assuming PA28 is bit 3 in your Switch_In return, and PA27 is bit 2
-    bool isJumping = (buttons & 0x08); 
-    bool isDucking = (buttons & 0x04);
+    // In negative logic, if the bit is 0, the button is pressed.
+    // We use bitwise AND (&) with a mask shifted to the correct pin number.
+    bool isJumping  = (buttons & (1 << 28)) == 0; 
+    bool isDucking  = (buttons & (1 << 27)) == 0;
+    bool isPausing  = (buttons & (1 << 17)) == 0;
     
     // Swap skater image based on action (assuming these arrays exist in images.h)
     if(isJumping) {
-      // Skater.image = SkaterJumpImage;
+      Skater.image = SkaterJumpImage;
     } else if (isDucking) {
-      // Skater.image = SkaterDuckImage;
+      Skater.image = SkaterDuckImage;
     } else {
-      // Skater.image = SkaterNormalImage;
+      Skater.image = SkaterNormalImage;
     }
+
+    //isPausing???
 
     // 3) move obstacles (scrolling effect)
     for(int i = 0; i < 4; i++){
@@ -123,6 +130,9 @@ void TIMG12_IRQHandler(void){uint32_t pos,msg;
     GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
   }
 }
+
+
+
 
 uint8_t TExaS_LaunchPadLogicPB27PB26(void){
   return (0x80|((GPIOB->DOUT31_0>>26)&0x03));
@@ -155,6 +165,11 @@ const char *Phrases[4][2] = {
   {Lives_English, Lives_Spanish}
 };
 
+void ST7735_OutPhrase(phrase_t message){
+  // Uses the global myLanguage variable to pick the correct column
+  ST7735_OutString((char *)Phrases[message][myLanguage]);
+}
+
 //old starter code phrases just in case
 // const char Hello_English[] ="Hello";
 // const char Hello_Spanish[] ="\xADHola!";
@@ -184,38 +199,64 @@ int main(void){ // main1
   ST7735_InitPrintf(INITR_BLACKTAB); // INITR_REDTAB for AdaFruit, INITR_BLACKTAB for HiLetGo
   ST7735_FillScreen(0x0000);            // set screen to black
 
-  for(int myPhrase = 0; myPhrase <= 3; myPhrase++){
-    for(int myL=0; myL<= 1; myL++){
-        //  ST7735_OutString((char *)Phrases[LANGUAGE][myL]);
-        // ST7735_OutChar(' ');
-
-        //print language name first just for clarity
-        if(myL == English) ST7735_OutString((char *)"ENG: ");
-        if(myL == Spanish) ST7735_OutString((char *)"ESP: ");
-
-        //print actual phrase
-        ST7735_OutString((char *)Phrases[myPhrase][myL]);
-        ST7735_OutChar(13);
-    }
-  }
-  
-  Clock_Delay1ms(3000);
-  ST7735_FillScreen(0x0000);       // set screen to black
-  l = 128;
   while(1){
-    Clock_Delay1ms(2000);
-    for(int j=0; j < 3; j++){
-      for(int i=0;i<16;i++){
-        ST7735_SetCursor(7*j+0,i);
-        ST7735_OutUDec(l);
-        ST7735_OutChar(' ');
-        ST7735_OutChar(' ');
-        ST7735_SetCursor(7*j+4,i);
-        ST7735_OutChar(l);
-        l++;
-      }
-    }
+    // Reset cursor to top-left corner
+    ST7735_SetCursor(0, 0); 
+    
+    // Test English Output
+    myLanguage = English;
+    ST7735_OutString((char *)"--- English ---\n");
+    ST7735_OutPhrase(START_GAME); ST7735_OutChar('\n');
+    ST7735_OutPhrase(GAME_OVER);  ST7735_OutChar('\n');
+    ST7735_OutPhrase(SCORE);      ST7735_OutString((char *)"0\n");
+    ST7735_OutPhrase(LIVES);      ST7735_OutString((char *)"3\n\n");
+
+    // Test Spanish Output
+    myLanguage = Spanish;
+    ST7735_OutString((char *)"--- Spanish ---\n");
+    ST7735_OutPhrase(START_GAME); ST7735_OutChar('\n');
+    ST7735_OutPhrase(GAME_OVER);  ST7735_OutChar('\n');
+    ST7735_OutPhrase(SCORE);      ST7735_OutString((char *)"0\n");
+    ST7735_OutPhrase(LIVES);      ST7735_OutString((char *)"3\n");
+    
+    // Delay to make it readable, then clear screen and repeat
+    Clock_Delay(80000000); // Approx 1-2 seconds
+    ST7735_FillScreen(ST7735_BLACK);
   }
+
+  // for(int myPhrase = 0; myPhrase <= 3; myPhrase++){
+  //   for(int myL=0; myL<= 1; myL++){
+  //       //  ST7735_OutString((char *)Phrases[LANGUAGE][myL]);
+  //       // ST7735_OutChar(' ');
+
+  //       //print language name first just for clarity
+  //       if(myL == English) ST7735_OutString((char *)"ENG: ");
+  //       if(myL == Spanish) ST7735_OutString((char *)"ESP: ");
+
+  //       //print actual phrase
+  //       ST7735_OutString((char *)Phrases[myPhrase][myL]);
+  //       ST7735_OutChar(13);
+  //   }
+  // }
+  
+  // Clock_Delay1ms(3000);
+  // ST7735_FillScreen(0x0000);       // set screen to black
+  // l = 128;
+  // while(1){
+  //   Clock_Delay1ms(2000);
+  //   for(int j=0; j < 3; j++){
+  //     for(int i=0;i<16;i++){
+  //       ST7735_SetCursor(7*j+0,i);
+  //       ST7735_OutUDec(l);
+  //       ST7735_OutChar(' ');
+  //       ST7735_OutChar(' ');
+  //       ST7735_SetCursor(7*j+4,i);
+  //       ST7735_OutChar(l);
+  //       l++;
+  //     }
+  //   }
+  // }
+
 }
 
 
@@ -325,9 +366,21 @@ int main5(void){ // final main
     if (Semaphore == 1) {
       Semaphore = 0;  //clear semaphore
 
-      //call drawing functions here
-      //ST7735_DrawBitMap(Skater.x, skater.y, Skater.image, 18, 18);
-      //loop to draw obstacles.....
+      // 1) Draw the Skater
+      // Syntax: X, Y, Image Pointer, Width, Height
+      ST7735_DrawBitmap(Skater.x, Skater.y, Skater.image, 16, 16); 
+
+      // 2) Draw the Obstacles
+      for(int i = 0; i < 4; i++){
+        if(Obstacles[i].life == alive){
+          ST7735_DrawBitmap(Obstacles[i].x, Obstacles[i].y, Obstacles[i].image, 16, 16);
+        }
+      }
+
+      // 3) Update the Score text
+      ST7735_SetCursor(0, 0); // Top left corner
+      ST7735_OutString((char *)Phrases[SCORE][myLanguage]);
+      ST7735_OutUDec(Score);
 
     }
   }
