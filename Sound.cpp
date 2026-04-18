@@ -1,8 +1,9 @@
 // Sound.cpp
 // Runs on MSPM0
 // Sound assets in sounds/sounds.h
-// your name
-// your data 
+// Geyang (Alex) Xu, Jingyuan (Abel) Wang
+// April 2026
+
 #include <stdint.h>
 #include <ti/devices/msp/msp.h>
 #include "Sound.h"
@@ -27,6 +28,7 @@ void SysTick_IntArm(uint32_t period, uint32_t priority){
   SysTick->VAL   = 0;         // clear count, cause reload
   SysTick->CTRL  = 0x07;      // enable SysTick with interrupts
 }
+
 // initialize a 11kHz SysTick, however no sound should be started
 // initialize any global variables
 // Initialize the 5 bit DAC
@@ -82,28 +84,14 @@ void Sound_Start(const uint8_t *pt, uint32_t count){
   __enable_irq();
 }
 
-void Sound_Shoot(void){
-  Sound_Start( shoot, 4080);
-}
-void Sound_Killed(void){
-  Sound_Start(invaderkilled, 3377);
-}
-void Sound_Explosion(void){
-  Sound_Start(explosion, 2000);
+void Sound_Ollie(void){
+  Sound_Start(Ollie, 6821); 
 }
 
-void Sound_Fastinvader1(void){
-  Sound_Start(fastinvader1, 982);
+void Sound_Crouch(void){
+  Sound_Start(Crouch, 5175);
 }
-void Sound_Fastinvader2(void){
-  Sound_Start(fastinvader2, 1042);
-}
-void Sound_Fastinvader3(void){
-  Sound_Start(fastinvader3, 1054);
-}
-void Sound_Fastinvader4(void){
-  Sound_Start(fastinvader4, 1098);
-}
-void Sound_Highpitch(void){
-  Sound_Start(highpitch, 1802);
+
+void Sound_GameOver(void){
+  Sound_Start(GameOver, 7291);
 }

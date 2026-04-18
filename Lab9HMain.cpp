@@ -1,8 +1,8 @@
 // Lab9HMain.cpp
 // Runs on MSPM0G3507
 // Lab 9 ECE319H
-// Your name: Jingyuan (Abel) Wang, Geyang (Alex) Xu
-// Last Modified: January 12, 2026
+// Jingyuan (Abel) Wang, Geyang (Alex) Xu
+// April 2026
 
 #include <stdio.h>
 #include <stdint.h>
@@ -321,7 +321,7 @@ int main2(void){ // main2
 
 
 // use main3 to test switches and LEDs
-int main(void){ // main3
+int main3(void){ // main3
   __disable_irq();
   PLL_Init(); // set bus speed
   LaunchPad_Init();
@@ -362,7 +362,7 @@ int main(void){ // main3
 
     // 1. Smooth Cursor Math (Flipped)
     // 130 (Bottom) - 70 (Top) = 60 pixels of total range
-    cursor_y = 130 - ((60 * adc_val) >> 12); 
+    cursor_y = 130 - ((120 * adc_val) >> 12); 
 
     // 2. Discrete Skater Snapping
     // 2048 is exactly half of the 0-4095 ADC range
@@ -407,30 +407,43 @@ int main(void){ // main3
 
 
 // use main4 to test sound outputs
-int main4(void){ uint32_t last=0,now;
+int main(void){
+  constexpr uint32_t JumpButtonMask  = (1u<<28); // PA28, negative logic
+  constexpr uint32_t DuckButtonMask  = (1u<<27); // PA27, negative logic
+  constexpr uint32_t PauseButtonMask = (1u<<17); // PA17, negative logic
+
+  constexpr uint32_t SoundButtonMask = JumpButtonMask|DuckButtonMask|PauseButtonMask;
+  uint32_t last, now, newPresses;
+  
   __disable_irq();
   PLL_Init(); // set bus speed
   LaunchPad_Init();
   Switch_Init(); // initialize switches
   LED_Init(); // initialize LED
   Sound_Init();  // initialize sound
-  TExaS_Init(ADC0,6,0); // ADC1 channel 6 is PB20, TExaS scope
+  TExaS_Init(ADC0,6,0); // optional scope/debug
+  last = Switch_In() & SoundButtonMask;
   __enable_irq();
+
+  // Immediate startup chirp verifies the DAC/speaker path even before buttons are tested.
+  Sound_Ollie();
+
   while(1){
-    now = Switch_In(); // one of your buttons
-    if((last == 0)&&(now == 1)){
-      Sound_Shoot(); // call one of your sounds
+    now = Switch_In() & SoundButtonMask;
+    newPresses = last & (~now); // negative logic: 1->0 means newly pressed
+
+    if(newPresses & JumpButtonMask){
+      Sound_Ollie();
     }
-    if((last == 0)&&(now == 2)){
-      Sound_Killed(); // call one of your sounds
+    if(newPresses & DuckButtonMask){
+      Sound_Crouch();
     }
-    if((last == 0)&&(now == 4)){
-      Sound_Explosion(); // call one of your sounds
+    if(newPresses & PauseButtonMask){
+      Sound_GameOver();
     }
-    if((last == 0)&&(now == 8)){
-      Sound_Fastinvader1(); // call one of your sounds
-    }
-    // modify this to test all your sounds
+    
+    last = now;
+    Clock_Delay1ms(1);
   }
 }
 
