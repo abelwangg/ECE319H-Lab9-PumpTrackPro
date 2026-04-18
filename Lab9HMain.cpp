@@ -1,7 +1,7 @@
 // Lab9HMain.cpp
 // Runs on MSPM0G3507
 // Lab 9 ECE319H
-// Your name
+// Your name: Jingyuan (Abel) Wang, Geyang (Alex) Xu
 // Last Modified: January 12, 2026
 
 #include <stdio.h>
@@ -19,9 +19,11 @@
 #include "Switch.h"
 #include "Sound.h"
 #include "images/images.h"
+
 extern "C" void __disable_irq(void);
 extern "C" void __enable_irq(void);
 extern "C" void TIMG12_IRQHandler(void);
+
 // ****note to ECE319K students****
 // the data sheet says the ADC does not work when clock is 80 MHz
 // however, the ADC seems to work on my boards at 80 MHz
@@ -191,7 +193,7 @@ void ST7735_OutPhrase(phrase_t message){
 
 
 // use main1 to observe special characters
-int main(void){ // main1
+int main1(void){ // main1
     char l;
   __disable_irq();
   PLL_Init(); // set bus speed
@@ -267,48 +269,138 @@ int main2(void){ // main2
   __disable_irq();
   PLL_Init(); // set bus speed
   LaunchPad_Init();
-  ST7735_InitPrintf(INITR_REDTAB); // INITR_REDTAB for AdaFruit, INITR_BLACKTAB for HiLetGo
+  ST7735_InitPrintf(INITR_BLACKTAB); // INITR_REDTAB for AdaFruit, INITR_BLACKTAB for HiLetGo
   ST7735_FillScreen(ST7735_BLACK);
-  ST7735_DrawBitmap(22, 159, PlayerShip0, 18,8); // player ship bottom
-  ST7735_DrawBitmap(53, 151, Bunker0, 18,5);
-  ST7735_DrawBitmap(42, 159, PlayerShip1, 18,8); // player ship bottom
-  ST7735_DrawBitmap(62, 159, PlayerShip2, 18,8); // player ship bottom
-  ST7735_DrawBitmap(82, 159, PlayerShip3, 18,8); // player ship bottom
-  ST7735_DrawBitmap(0, 9, SmallEnemy10pointA, 16,10);
-  ST7735_DrawBitmap(20,9, SmallEnemy10pointB, 16,10);
-  ST7735_DrawBitmap(40, 9, SmallEnemy20pointA, 16,10);
-  ST7735_DrawBitmap(60, 9, SmallEnemy20pointB, 16,10);
-  ST7735_DrawBitmap(80, 9, SmallEnemy30pointA, 16,10);
 
-  for(uint32_t t=500;t>0;t=t-5){
-    SmallFont_OutVertical(t,104,6); // top left
-    Clock_Delay1ms(50);              // delay 50 msec
-  }
-  ST7735_FillScreen(0x0000);   // set screen to black
-  ST7735_SetCursor(1, 1);
-  ST7735_OutString((char *)"GAME OVER");
-  ST7735_SetCursor(1, 2);
-  ST7735_OutString((char *)"Nice try,");
-  ST7735_SetCursor(1, 3);
-  ST7735_OutString((char *)"Earthling!");
-  ST7735_SetCursor(2, 4);
-  ST7735_OutUDec(1234);
+  // Test the three Skater sprites
+  // Syntax: X, Y, Pointer to Array, Width, Height
+  // Remember: Y is the BOTTOM-left corner of the image in this specific library!
+  
+  // Draw Normal Skater on the left
+  ST7735_DrawBitmap(10, 100, SkaterNormalImage, 16, 16); 
+  
+  // Draw Jumping Skater in the middle
+  ST7735_DrawBitmap(50, 100, SkaterJumpImage, 16, 16); 
+  
+  // Draw Ducking Skater on the right
+  ST7735_DrawBitmap(90, 100, SkaterDuckImage, 16, 16); 
+
   while(1){
+    // Do nothing, just leave the images on the screen
   }
+
+
+  // ST7735_DrawBitmap(22, 159, PlayerShip0, 18,8); // player ship bottom
+  // ST7735_DrawBitmap(53, 151, Bunker0, 18,5);
+  // ST7735_DrawBitmap(42, 159, PlayerShip1, 18,8); // player ship bottom
+  // ST7735_DrawBitmap(62, 159, PlayerShip2, 18,8); // player ship bottom
+  // ST7735_DrawBitmap(82, 159, PlayerShip3, 18,8); // player ship bottom
+  // ST7735_DrawBitmap(0, 9, SmallEnemy10pointA, 16,10);
+  // ST7735_DrawBitmap(20,9, SmallEnemy10pointB, 16,10);
+  // ST7735_DrawBitmap(40, 9, SmallEnemy20pointA, 16,10);
+  // ST7735_DrawBitmap(60, 9, SmallEnemy20pointB, 16,10);
+  // ST7735_DrawBitmap(80, 9, SmallEnemy30pointA, 16,10);
+
+  // for(uint32_t t=500;t>0;t=t-5){
+  //   SmallFont_OutVertical(t,104,6); // top left
+  //   Clock_Delay1ms(50);              // delay 50 msec
+  // }
+  // ST7735_FillScreen(0x0000);   // set screen to black
+  // ST7735_SetCursor(1, 1);
+  // ST7735_OutString((char *)"GAME OVER");
+  // ST7735_SetCursor(1, 2);
+  // ST7735_OutString((char *)"Nice try,");
+  // ST7735_SetCursor(1, 3);
+  // ST7735_OutString((char *)"Earthling!");
+  // ST7735_SetCursor(2, 4);
+  // ST7735_OutUDec(1234);
+  // while(1){
+  // }
 }
 
 
 
 // use main3 to test switches and LEDs
-int main3(void){ // main3
+int main(void){ // main3
   __disable_irq();
   PLL_Init(); // set bus speed
   LaunchPad_Init();
-  Switch_Init(); // initialize switches
-  LED_Init(); // initialize LED
-  while(1){
-    // write code to test switches and LEDs
 
+  Switch_Init(); //initializes PA28, PA27, PA17 as inputs
+  Sensor.Init();
+
+  ST7735_InitPrintf(INITR_BLACKTAB); 
+  ST7735_FillScreen(ST7735_BLACK);
+  __enable_irq();
+
+  uint32_t buttons;
+  uint32_t adc_val;
+
+  // The skater stays fixed on the left side of the screen
+  int32_t skater_x = 20; 
+  int32_t skater_y = 130;     
+  int32_t old_skater_y = 130;
+
+  int32_t cursor_y = 130;
+  int32_t old_cursor_y = 130;
+
+  // Draw two white lines to represent  "Two Tracks"
+  ST7735_DrawFastHLine(0, 70, 128, ST7735_WHITE);
+  ST7735_DrawFastHLine(0, 130, 128, ST7735_WHITE);
+
+  while(1){
+    // 1. Read Inputs
+    buttons = Switch_In(); 
+    adc_val = Sensor.In(); // Returns 0 to 4095
+    
+    // 2. Button Logic (Negative Logic)
+    bool isJumping = (buttons & (1 << 28)) == 0; 
+    bool isDucking = (buttons & (1 << 27)) == 0;
+    
+    old_skater_y = skater_y;
+    old_cursor_y = cursor_y;
+
+    // 1. Smooth Cursor Math (Flipped)
+    // 130 (Bottom) - 70 (Top) = 60 pixels of total range
+    cursor_y = 130 - ((60 * adc_val) >> 12); 
+
+    // 2. Discrete Skater Snapping
+    // 2048 is exactly half of the 0-4095 ADC range
+    if(adc_val < 2048) {
+      skater_y = 130; // Snap to bottom track
+    } else {
+      skater_y = 70;  // Snap to top track
+    }
+
+    // 3. Erase old smooth cursor
+    if(cursor_y != old_cursor_y){
+      // Erase a 4x4 bounding box where the old red cursor was
+      ST7735_FillRect(5, old_cursor_y - 3, 4, 4, ST7735_BLACK);
+    }
+
+    // 4. Erase old skater AND patch the track
+    if(skater_y != old_skater_y || isJumping || isDucking){
+      // Erase the old 16x16 skater
+      ST7735_FillRect(skater_x, old_skater_y - 15, 16, 16, ST7735_BLACK);
+      
+      // Patch the white track line that we just accidentally erased
+      if(old_skater_y == 70)  ST7735_DrawFastHLine(skater_x, 70, 16, ST7735_WHITE);
+      if(old_skater_y == 130) ST7735_DrawFastHLine(skater_x, 130, 16, ST7735_WHITE);
+    }
+
+    // 5. Draw the new smooth cursor (a 4x4 Red Square on the left edge)
+    ST7735_FillRect(5, cursor_y - 3, 4, 4, ST7735_RED);
+
+    // 6. Draw the new snapped skater
+    if (isJumping) {
+      ST7735_DrawBitmap(skater_x, skater_y, SkaterJumpImage, 16, 16);
+    } else if (isDucking) {
+      ST7735_DrawBitmap(skater_x, skater_y, SkaterDuckImage, 16, 16);
+    } else {
+      ST7735_DrawBitmap(skater_x, skater_y, SkaterNormalImage, 16, 16);
+    }
+
+    Clock_Delay1ms(33);
   }
 }
 
@@ -386,3 +478,4 @@ int main5(void){ // final main
   }
 }
 
+//ts pmo
