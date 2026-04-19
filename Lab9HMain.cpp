@@ -110,7 +110,7 @@ uint32_t Lives = 3;
 
 //game initialization stuff
   //game states
-  typedef enum {MENU, PLAYING, GAMEOVER} state_t;
+  typedef enum {MENU, PLAYING, PAUSED, GAMEOVER} state_t;
   state_t GameState = MENU;
 
   //obstacle types
@@ -135,142 +135,142 @@ uint32_t Lives = 3;
   int32_t skater_y = 130;
   int32_t old_skater_y = 130;
 
+  //adding cursor variables
+  int32_t cursor_y = 130;
+  int32_t old_cursor_y = 130;
+
 
 
 // ISR game engine runs at 30Hz
-void TIMG12_IRQHandler(void){uint32_t pos,msg;
-  if((TIMG12->CPU_INT.IIDX) == 1){ // this will acknowledge timer interrupt
-    GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
-    GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
-
-//this ISR will sample slide-pot to move skater left/right, check buttons for Ollie/Duck commands, 
-//and move obstacles down the screen
-
-// game engine goes here
+void TIMG12_IRQHandler(void){//uint32_t pos,msg;
+  if((TIMG12->CPU_INT.IIDX) == 1){ 
     uint32_t adc_val = Sensor.In(); 
     uint32_t buttons = Switch_In();
 
-    //negative logic, if the bit is 0, the button is pressed.
-    //use bitwise AND (&) with a mask shifted to the correct pin number.
+    //EDGE DETECTION LOGIC (Fixes the fast language toggle)
+    static uint32_t last_buttons = 0xFFFFFFFF; // Assume unpressed at start
+    uint32_t presses = last_buttons & (~buttons); // 1->0 means newly pressed
+    last_buttons = buttons;
+
+    // Use "presses" for one-time actions (Language, Start, Menu)
+    bool pressedJump  = (presses & (1 << 28)) != 0;
+    bool pressedDuck = (presses & (1 << 27)) != 0;  //how did I forget about ts
+    bool pressedPause = (presses & (1 << 17)) != 0;
+
+    // Use "buttons" for continuous actions (Holding duck/jump for the sprite)
     bool isJumping  = (buttons & (1 << 28)) == 0; 
     bool isDucking  = (buttons & (1 << 27)) == 0;
-    bool isPausing  = (buttons & (1 << 17)) == 0; //used for language/start
 
-    //obstacles cooldown timer
     static uint32_t SpawnCooldown = 0;
-    
-    if (GameState == MENU) {
-      //toggle language or start game
-      if (isPausing) {
-        myLanguage = (myLanguage == English) ? Spanish : English;
-      }
-      if (isJumping) {
-        GameState = PLAYING;
-        Score = 0;
-        //initialize obstacles to dead
-        for (int i=0; i<3; i++) {
-          ActiveObs[i].life = dead;
+    static uint32_t GameOverTimer = 0; // Fixes the 2-second wait delay
+
+    //STATE MACHINE BLOCKKKKKK
+      if (GameState == MENU) {
+        //language Selection now works on the Start Screen cleanly!
+        if (pressedPause) {
+          myLanguage = (myLanguage == English) ? Spanish : English;
         }
-      }
-    } 
-    
-    else if (GameState == PLAYING) {
-      old_skater_y = skater_y;
-
-      //physics tuned for quick response (like 130mm Landyachtz Polar Bear trucks)
-      if(adc_val < 2048) { skater_y = 130; } //snap to Bottom
-      else { skater_y = 70; }                //snap to Top
-
-      //swap skater sprite
-      if(isJumping) Skater.image = SkaterJumpImage;
-      else if(isDucking) Skater.image = SkaterDuckImage;
-      else Skater.image = SkaterNormalImage;
-
-      //MOVE OBSTACLES and check collisions logic bs
-      for(int i = 0; i < 3; i++){
-        if(ActiveObs[i].life == alive){
-          ActiveObs[i].old_x = ActiveObs[i].x;
-          ActiveObs[i].x -= 3; // Scroll speed to the left
-
-          //if goes off screen, kill it
-          if(ActiveObs[i].x < -16) {
-              ActiveObs[i].life = dead;
-          }
-
-          // COLLISION DETECTION
-          // 1. Are they on the exact same track?
-          // 2. Are they overlapping horizontally? (Distance < 12 pixels)
-          if((skater_y == ActiveObs[i].y) && (abs(skater_x - ActiveObs[i].x) < 12)){
-              
-            if(ActiveObs[i].type == WALL) {
-              GameState = GAMEOVER; //total wipeout
-              Sound_GameOver(); //play sound
-            }
-
-            else if(ActiveObs[i].type == LOWER && !isJumping) {
-              GameState = GAMEOVER; //clipped a cone
-              Sound_GameOver();
-            }
-
-            else if(ActiveObs[i].type == UPPER && !isDucking) {
-              GameState = GAMEOVER; //hit your head
-              Sound_GameOver();
-            }
+        
+        //Start the game on edge trigger
+        if (pressedJump) {
+          Random_Init(TIMG12->COUNTERREGS.CTR); // Seed the randomness here!
+          GameState = PLAYING;
+          Score = 0;
+          for (int i=0; i<3; i++) {
+            ActiveObs[i].life = dead;
           }
         }
-      }
+      } 
+      
+      else if (GameState == PLAYING) {
+          //check for pause
+        if (pressedPause) {
+          GameState = PAUSED;
+        } 
+        //otherwise run normal physics
+        else {
 
-      //decrease cooldown timer every frame
-      if(SpawnCooldown > 0) {
-        SpawnCooldown--;
-      }
-      //only allow spawning of obstacles if cooldown is finished
-      else {
-        //randomly spawn new obstacles
-        if (Random(100) < 25) {  //25% chance every frame?
-          for (int i = 0; i < 3; i++) {
-            if (ActiveObs[i].life == dead) {
-              ActiveObs[i].life = alive;
-              ActiveObs[i].x = 128; //spawn on right edge
+          //sounds
+          if (pressedJump) Sound_Ollie();
+          if (pressedDuck) Sound_Crouch();
 
-              //fifty fifty chance for top or bottom track
-              ActiveObs[i].y = (Random(2) == 0) ? 70 : 130;
+          old_skater_y = skater_y;
+          old_cursor_y = cursor_y;
 
-              //pick type: 0 = lower, 1 = upper, 2 = wall
-              ActiveObs[i].type = Random(3);
+          // Smooth Cursor Math 
+          cursor_y = 130 - ((120 * adc_val) >> 12); 
 
-              //stuff
-              if (ActiveObs[i].type == LOWER) ActiveObs[i].image = ConeImage;
-              else if (ActiveObs[i].type == UPPER) ActiveObs[i].image = SignImage;
-              else ActiveObs[i].image = WallImage;
+          // Discrete Skater Snapping
+          if(adc_val < 2048) { skater_y = 130; } 
+          else { skater_y = 70; }                
 
-              //RESET COOLDOWN
-              //wait at least 40 frames (1.3 s) before spawning next one
-              //could lower this as score gets higher to increase difficulty?
-              SpawnCooldown = 40;
+          if(isJumping) Skater.image = SkaterJumpImage;
+          else if(isDucking) Skater.image = SkaterDuckImage;
+          else Skater.image = SkaterNormalImage;
 
-              break;  //only spawn one per frame
+          // Move Obstacles and check collisions
+          for(int i = 0; i < 3; i++){
+            if(ActiveObs[i].life == alive){
+              ActiveObs[i].old_x = ActiveObs[i].x;
+              ActiveObs[i].x -= 3; 
+
+              if(ActiveObs[i].x < -16) ActiveObs[i].life = dead;
+
+              if((skater_y == ActiveObs[i].y) && (abs(skater_x - ActiveObs[i].x) < 12)){
+                bool crashed = false;
+                if(ActiveObs[i].type == WALL) crashed = true;
+                else if(ActiveObs[i].type == LOWER && !isJumping) crashed = true;
+                else if(ActiveObs[i].type == UPPER && !isDucking) crashed = true;
+
+                if(crashed) {
+                  GameState = GAMEOVER; 
+                  GameOverTimer = 60; 
+                  Sound_GameOver(); 
+                }
+              }
             }
           }
+
+          //obstacle spawning Logic
+          if(SpawnCooldown > 0) SpawnCooldown--;
+          else {
+            if (Random(100) < 25) {  
+              for (int i = 0; i < 3; i++) {
+                if (ActiveObs[i].life == dead) {
+                  ActiveObs[i].life = alive;
+                  ActiveObs[i].x = 128; 
+                  ActiveObs[i].y = (Random(2) == 0) ? 70 : 130;
+                  ActiveObs[i].type = Random(3);
+
+                  if (ActiveObs[i].type == LOWER) ActiveObs[i].image = ConeImage;
+                  else if (ActiveObs[i].type == UPPER) ActiveObs[i].image = SignImage;
+                  else ActiveObs[i].image = WallImage;
+
+                  SpawnCooldown = 40;
+                  break;  
+                }
+              }
+            }
+          }
+          Score++;  //increment score
         }
       }
 
-      //increment score
-      Score++;
-    }
-    
-    else if (GameState == GAMEOVER) {
-      if (isPausing) {
-        GameState = MENU; //go back to start screen
+      else if (GameState == PAUSED) {
+        if (pressedPause) {
+          GameState = PLAYING;  //resume the game
+        }
       }
-    }
+      
+      else if (GameState == GAMEOVER) {
+        if (GameOverTimer > 0) {
+          GameOverTimer--; //ount down the 2 seconds
+        } else if (pressedPause) {
+          GameState = MENU; //go back to start screen only AFTER timer is done
+        }
+      }
 
-    //set semaphore (basically tell main to draw)
     Semaphore = 1;
-
-    //NOOOOOOOOO LCD OUTPUT IN INTERRUPT SERVICE ROUTINES
-
-    GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
   }
 }
 
@@ -578,67 +578,83 @@ int main(void){ // final main
   // initialize all data structures
   __enable_irq();
 
-  //human randomness seed trick lmao
-  ST7735_SetCursor(0, 2);
-  ST7735_OutPhrase(START_GAME);
 
-  //wait in this loop until jump button (PA28) is pressed
-  while((Switch_In() & (1 << 28)) != 0){ 
-      // Do nothing, just spin and wait
-  }
 
-  //grab hardware timer value!!!!!!!
-  Random_Init(TIMG12->COUNTERREGS.CTR); 
-  
-  GameState = PLAYING; //start game
-
+  GameState = MENU; 
+  state_t old_GameState = GAMEOVER; // Set to something different so it triggers a screen clear on boot
 
   while(1){
-    // wait for semaphore
     if (Semaphore == 1) {
-      Semaphore = 0;  //clear semaphore
+      Semaphore = 0;  
 
+      //THE MAGIC ERASER: Only clear the screen when the state actually changes!
+      if (GameState != old_GameState) {
+          ST7735_FillScreen(ST7735_BLACK);
+          old_GameState = GameState;
+      }
+
+
+      // --- MENU SCREEN ---
       if(GameState == MENU) {
         ST7735_SetCursor(0, 2);
-        ST7735_OutPhrase(START_GAME); // Uses your 2D array!
+        ST7735_OutPhrase(START_GAME); 
         ST7735_SetCursor(0, 4);
         ST7735_OutString((char*)"Pause Btn = Language");
       } 
+
+
+      // --- PLAYING SCREEN ---
       else if(GameState == PLAYING) {
-        // 1. Erase old Skater
+        
+        // 1. Erase old smooth cursor and patch tracks on the left edge
+        if(cursor_y != old_cursor_y){
+          ST7735_FillRect(2, old_cursor_y - 2, 5, 5, ST7735_BLACK);
+          if(old_cursor_y >= 68 && old_cursor_y <= 72) ST7735_DrawFastHLine(0, 70, 7, ST7735_WHITE);
+          if(old_cursor_y >= 128 && old_cursor_y <= 132) ST7735_DrawFastHLine(0, 130, 7, ST7735_WHITE);
+        }
+
+        //erase old skater
         if(skater_y != old_skater_y || Skater.image != SkaterNormalImage){
             ST7735_FillRect(skater_x, old_skater_y - 15, 16, 16, ST7735_BLACK);
             if(old_skater_y == 70) ST7735_DrawFastHLine(skater_x, 70, 16, ST7735_WHITE);
             if(old_skater_y == 130) ST7735_DrawFastHLine(skater_x, 130, 16, ST7735_WHITE);
         }
 
-        // 2. Erase and Redraw Obstacles
+        //erase and redraw obstacles
         for(int i = 0; i < 3; i++){
             if(ActiveObs[i].life == alive){
-                // Erase trail
                 ST7735_FillRect(ActiveObs[i].old_x, ActiveObs[i].y - 15, 3, 16, ST7735_BLACK);
                 ST7735_DrawBitmap(ActiveObs[i].x, ActiveObs[i].y, ActiveObs[i].image, 16, 16);
             }
         }
 
-        // 3. Draw Skater and Tracks
+        //draw tracks, skater, and new cursor
         ST7735_DrawFastHLine(0, 70, 128, ST7735_WHITE);
         ST7735_DrawFastHLine(0, 130, 128, ST7735_WHITE);
         ST7735_DrawBitmap(skater_x, skater_y, Skater.image, 16, 16);
+        ST7735_FillRect(2, cursor_y - 2, 5, 5, ST7735_RED);  //draw red dot
 
-        // 4. Update Score
+        //update score
         ST7735_SetCursor(0, 0);
         ST7735_OutUDec(Score);
       }
+
+      // --- PAUSED SCREEN ---
+      else if (GameState == PAUSED) {
+        ST7735_SetCursor(4, 5);
+        ST7735_OutString((char*)"** PAUSED **");
+        ST7735_SetCursor(1, 7);
+        ST7735_OutString((char*)"Pause Btn to Resume");
+      }
+      
+      // --- GAME OVER SCREEN ---
       else if(GameState == GAMEOVER) {
-        ST7735_FillScreen(ST7735_BLACK);
+        // No FillScreen here anymore! No more flashing!
         ST7735_SetCursor(2, 4);
         ST7735_OutPhrase(GAME_OVER);
         ST7735_SetCursor(2, 6);
         ST7735_OutPhrase(SCORE);
         ST7735_OutUDec(Score);
-        
-        Clock_Delay1ms(2000); // Prevent accidental instant restart
         
         ST7735_SetCursor(0, 8);
         ST7735_OutString((char*)"Pause Btn to Menu");
