@@ -6,6 +6,9 @@
 
 #include <stdio.h>
 #include <stdint.h>
+
+#include <stdlib.h> //needed ts for absolute value
+
 #include <ti/devices/msp/msp.h>
 #include "../inc/ST7735.h"
 #include "../inc/Clock.h"
@@ -34,6 +37,12 @@ void PLL_Init(void){ // set phase lock loop (PLL)
 }
 
 uint32_t M=1;
+
+//custom init function??
+void Random_Init(uint32_t seed){
+  M = seed;
+}
+
 uint32_t Random32(void){
   M = 1664525*M+1013904223;
   return M;
@@ -60,14 +69,75 @@ sprite_t Skater;
 sprite_t Obstacles[4]; // Max 4 obstacles on screen at once
 sprite_t EnergyDrink;  // 1 collectible on screen at a time
 
-uint32_t Score = 0;
+// uint32_t Score = 0;
 uint32_t Lives = 3;
-uint8_t Semaphore = 0; // Flag to trigger LCD update
+// uint8_t Semaphore = 0; // Flag to trigger LCD update
+
+
+//language stuff
+  typedef enum {English, Spanish} Language_t;
+
+  Language_t myLanguage=English;
+
+  //phrases needed for pump track pro
+  typedef enum {START_GAME, GAME_OVER, SCORE, LIVES} phrase_t;
+
+  const char Start_English[] = "Press Jump to Start";
+  const char Start_Spanish[] = "Salta para Iniciar";
+
+  const char Over_English[]  = "GAME OVER";
+  const char Over_Spanish[]  = "FIN DEL JUEGO";
+
+  const char Score_English[] = "Score: ";
+  const char Score_Spanish[] = "Puntos: ";
+
+  const char Lives_English[] = "Lives: ";
+  const char Lives_Spanish[] = "Vidas: ";
+
+  //2D Array to map [phrase_t][Language_t]
+  const char *Phrases[4][2] = {
+    {Start_English, Start_Spanish},
+    {Over_English,  Over_Spanish},
+    {Score_English, Score_Spanish},
+    {Lives_English, Lives_Spanish}
+  };
+
+  void ST7735_OutPhrase(phrase_t message){
+    // Uses the global myLanguage variable to pick the correct column
+    ST7735_OutString((char *)Phrases[message][myLanguage]);
+  }
+
+
+//game initialization stuff
+  //game states
+  typedef enum {MENU, PLAYING, GAMEOVER} state_t;
+  state_t GameState = MENU;
+
+  //obstacle types
+  #define LOWER 0  //requires ollie
+  #define UPPER 1  //requires crouch
+  #define WALL  2  //requires track switch
+
+  struct Obstacle {
+    int32_t x;
+    int32_t y;            // 70 (Top Track) or 130 (Bottom Track)
+    int32_t old_x;
+    uint8_t type;         // LOWER, UPPER, or WALL
+    const uint16_t *image; 
+    status_t life;        // dead or alive
+  };
+
+  Obstacle ActiveObs[3];  //max 3 obstacles on screen at once
+
+  uint32_t Score = 0;
+  uint8_t Semaphore = 0;
+  int32_t skater_x = 20;
+  int32_t skater_y = 130;
+  int32_t old_skater_y = 130;
 
 
 
-
-// games  engine runs at 30Hz
+// ISR game engine runs at 30Hz
 void TIMG12_IRQHandler(void){uint32_t pos,msg;
   if((TIMG12->CPU_INT.IIDX) == 1){ // this will acknowledge timer interrupt
     GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
@@ -77,57 +147,128 @@ void TIMG12_IRQHandler(void){uint32_t pos,msg;
 //and move obstacles down the screen
 
 // game engine goes here
-
-//commit test by alex
-//commit test by abel
-
-    // 1) sample slide pot for skater x position
-    //Sensor.In() returns 12-bit ADC value (0 to 4095)
-    //map 0-4095 to LCD width (0-110, leaving room for sprite width)
-
     uint32_t adc_val = Sensor.In(); 
-    Skater.x = (110 * adc_val) / 4095;
-
-    // 2) read input switches for jump/duck
     uint32_t buttons = Switch_In();
-    // In negative logic, if the bit is 0, the button is pressed.
-    // We use bitwise AND (&) with a mask shifted to the correct pin number.
+
+    //negative logic, if the bit is 0, the button is pressed.
+    //use bitwise AND (&) with a mask shifted to the correct pin number.
     bool isJumping  = (buttons & (1 << 28)) == 0; 
     bool isDucking  = (buttons & (1 << 27)) == 0;
-    bool isPausing  = (buttons & (1 << 17)) == 0;
+    bool isPausing  = (buttons & (1 << 17)) == 0; //used for language/start
+
+    //obstacles cooldown timer
+    static uint32_t SpawnCooldown = 0;
     
-    // Swap skater image based on action (assuming these arrays exist in images.h)
-    if(isJumping) {
-      Skater.image = SkaterJumpImage;
-    } else if (isDucking) {
-      Skater.image = SkaterDuckImage;
-    } else {
-      Skater.image = SkaterNormalImage;
-    }
-
-    //isPausing???
-
-    // 3) move obstacles (scrolling effect)
-    for(int i = 0; i < 4; i++){
-      if(Obstacles[i].life == alive){
-        Obstacles[i].y += Obstacles[i].vy; // Move down the screen
-        
-        // If it goes off the bottom of the screen, kill it and score a point
-        if(Obstacles[i].y > 159){
-          Obstacles[i].life = dead;
-          Score += 10; 
+    if (GameState == MENU) {
+      //toggle language or start game
+      if (isPausing) {
+        myLanguage = (myLanguage == English) ? Spanish : English;
+      }
+      if (isJumping) {
+        GameState = PLAYING;
+        Score = 0;
+        //initialize obstacles to dead
+        for (int i=0; i<3; i++) {
+          ActiveObs[i].life = dead;
         }
+      }
+    } 
+    
+    else if (GameState == PLAYING) {
+      old_skater_y = skater_y;
+
+      //physics tuned for quick response (like 130mm Landyachtz Polar Bear trucks)
+      if(adc_val < 2048) { skater_y = 130; } //snap to Bottom
+      else { skater_y = 70; }                //snap to Top
+
+      //swap skater sprite
+      if(isJumping) Skater.image = SkaterJumpImage;
+      else if(isDucking) Skater.image = SkaterDuckImage;
+      else Skater.image = SkaterNormalImage;
+
+      //MOVE OBSTACLES and check collisions logic bs
+      for(int i = 0; i < 3; i++){
+        if(ActiveObs[i].life == alive){
+          ActiveObs[i].old_x = ActiveObs[i].x;
+          ActiveObs[i].x -= 3; // Scroll speed to the left
+
+          //if goes off screen, kill it
+          if(ActiveObs[i].x < -16) {
+              ActiveObs[i].life = dead;
+          }
+
+          // COLLISION DETECTION
+          // 1. Are they on the exact same track?
+          // 2. Are they overlapping horizontally? (Distance < 12 pixels)
+          if((skater_y == ActiveObs[i].y) && (abs(skater_x - ActiveObs[i].x) < 12)){
+              
+            if(ActiveObs[i].type == WALL) {
+              GameState = GAMEOVER; //total wipeout
+              Sound_GameOver(); //play sound
+            }
+
+            else if(ActiveObs[i].type == LOWER && !isJumping) {
+              GameState = GAMEOVER; //clipped a cone
+              Sound_GameOver();
+            }
+
+            else if(ActiveObs[i].type == UPPER && !isDucking) {
+              GameState = GAMEOVER; //hit your head
+              Sound_GameOver();
+            }
+          }
+        }
+      }
+
+      //decrease cooldown timer every frame
+      if(SpawnCooldown > 0) {
+        SpawnCooldown--;
+      }
+      //only allow spawning of obstacles if cooldown is finished
+      else {
+        //randomly spawn new obstacles
+        if (Random(100) < 25) {  //25% chance every frame?
+          for (int i = 0; i < 3; i++) {
+            if (ActiveObs[i].life == dead) {
+              ActiveObs[i].life = alive;
+              ActiveObs[i].x = 128; //spawn on right edge
+
+              //fifty fifty chance for top or bottom track
+              ActiveObs[i].y = (Random(2) == 0) ? 70 : 130;
+
+              //pick type: 0 = lower, 1 = upper, 2 = wall
+              ActiveObs[i].type = Random(3);
+
+              //stuff
+              if (ActiveObs[i].type == LOWER) ActiveObs[i].image = ConeImage;
+              else if (ActiveObs[i].type == UPPER) ActiveObs[i].image = SignImage;
+              else ActiveObs[i].image = WallImage;
+
+              //RESET COOLDOWN
+              //wait at least 40 frames (1.3 s) before spawning next one
+              //could lower this as score gets higher to increase difficulty?
+              SpawnCooldown = 40;
+
+              break;  //only spawn one per frame
+            }
+          }
+        }
+      }
+
+      //increment score
+      Score++;
+    }
+    
+    else if (GameState == GAMEOVER) {
+      if (isPausing) {
+        GameState = MENU; //go back to start screen
       }
     }
 
-    // 4) Collision Detection would go here
-    //will write this
-
-    // 5) set semaphore
+    //set semaphore (basically tell main to draw)
     Semaphore = 1;
 
-    // NO LCD OUTPUT IN INTERRUPT SERVICE ROUTINES
-
+    //NOOOOOOOOO LCD OUTPUT IN INTERRUPT SERVICE ROUTINES
 
     GPIOB->DOUTTGL31_0 = GREEN; // toggle PB27 (minimally intrusive debugging)
   }
@@ -140,37 +281,6 @@ uint8_t TExaS_LaunchPadLogicPB27PB26(void){
   return (0x80|((GPIOB->DOUT31_0>>26)&0x03));
 }
 
-typedef enum {English, Spanish} Language_t;
-
-Language_t myLanguage=English;
-
-//phrases needed for pump track pro
-typedef enum {START_GAME, GAME_OVER, SCORE, LIVES} phrase_t;
-
-const char Start_English[] = "Press Jump to Start";
-const char Start_Spanish[] = "Salta para Iniciar";
-
-const char Over_English[]  = "GAME OVER";
-const char Over_Spanish[]  = "FIN DEL JUEGO";
-
-const char Score_English[] = "Score: ";
-const char Score_Spanish[] = "Puntos: ";
-
-const char Lives_English[] = "Lives: ";
-const char Lives_Spanish[] = "Vidas: ";
-
-//2D Array to map [phrase_t][Language_t]
-const char *Phrases[4][2] = {
-  {Start_English, Start_Spanish},
-  {Over_English,  Over_Spanish},
-  {Score_English, Score_Spanish},
-  {Lives_English, Lives_Spanish}
-};
-
-void ST7735_OutPhrase(phrase_t message){
-  // Uses the global myLanguage variable to pick the correct column
-  ST7735_OutString((char *)Phrases[message][myLanguage]);
-}
 
 //old starter code phrases just in case
 // const char Hello_English[] ="Hello";
@@ -407,7 +517,7 @@ int main3(void){ // main3
 
 
 // use main4 to test sound outputs
-int main(void){
+int main4(void){
   constexpr uint32_t JumpButtonMask  = (1u<<28); // PA28, negative logic
   constexpr uint32_t DuckButtonMask  = (1u<<27); // PA27, negative logic
   constexpr uint32_t PauseButtonMask = (1u<<17); // PA17, negative logic
@@ -450,7 +560,7 @@ int main(void){
 
 
 // ALL ST7735 OUTPUT MUST OCCUR IN MAIN
-int main5(void){ // final main
+int main(void){ // final main
   __disable_irq();
   PLL_Init(); // set bus speed
   LaunchPad_Init();
@@ -460,33 +570,79 @@ int main5(void){ // final main
   Switch_Init(); // initialize switches
   LED_Init();    // initialize LED
   Sound_Init();  // initialize sound
+
   TExaS_Init(0,0,&TExaS_LaunchPadLogicPB27PB26); // PB27 and PB26
-    // initialize interrupts on TimerG12 at 30 Hz
+  // initialize interrupts on TimerG12 at 30 Hz
+  TimerG12_IntArm(2666666, 2);
   
   // initialize all data structures
   __enable_irq();
+
+  //human randomness seed trick lmao
+  ST7735_SetCursor(0, 2);
+  ST7735_OutPhrase(START_GAME);
+
+  //wait in this loop until jump button (PA28) is pressed
+  while((Switch_In() & (1 << 28)) != 0){ 
+      // Do nothing, just spin and wait
+  }
+
+  //grab hardware timer value!!!!!!!
+  Random_Init(TIMG12->COUNTERREGS.CTR); 
+  
+  GameState = PLAYING; //start game
+
 
   while(1){
     // wait for semaphore
     if (Semaphore == 1) {
       Semaphore = 0;  //clear semaphore
 
-      // 1) Draw the Skater
-      // Syntax: X, Y, Image Pointer, Width, Height
-      ST7735_DrawBitmap(Skater.x, Skater.y, Skater.image, 16, 16); 
-
-      // 2) Draw the Obstacles
-      for(int i = 0; i < 4; i++){
-        if(Obstacles[i].life == alive){
-          ST7735_DrawBitmap(Obstacles[i].x, Obstacles[i].y, Obstacles[i].image, 16, 16);
+      if(GameState == MENU) {
+        ST7735_SetCursor(0, 2);
+        ST7735_OutPhrase(START_GAME); // Uses your 2D array!
+        ST7735_SetCursor(0, 4);
+        ST7735_OutString((char*)"Pause Btn = Language");
+      } 
+      else if(GameState == PLAYING) {
+        // 1. Erase old Skater
+        if(skater_y != old_skater_y || Skater.image != SkaterNormalImage){
+            ST7735_FillRect(skater_x, old_skater_y - 15, 16, 16, ST7735_BLACK);
+            if(old_skater_y == 70) ST7735_DrawFastHLine(skater_x, 70, 16, ST7735_WHITE);
+            if(old_skater_y == 130) ST7735_DrawFastHLine(skater_x, 130, 16, ST7735_WHITE);
         }
+
+        // 2. Erase and Redraw Obstacles
+        for(int i = 0; i < 3; i++){
+            if(ActiveObs[i].life == alive){
+                // Erase trail
+                ST7735_FillRect(ActiveObs[i].old_x, ActiveObs[i].y - 15, 3, 16, ST7735_BLACK);
+                ST7735_DrawBitmap(ActiveObs[i].x, ActiveObs[i].y, ActiveObs[i].image, 16, 16);
+            }
+        }
+
+        // 3. Draw Skater and Tracks
+        ST7735_DrawFastHLine(0, 70, 128, ST7735_WHITE);
+        ST7735_DrawFastHLine(0, 130, 128, ST7735_WHITE);
+        ST7735_DrawBitmap(skater_x, skater_y, Skater.image, 16, 16);
+
+        // 4. Update Score
+        ST7735_SetCursor(0, 0);
+        ST7735_OutUDec(Score);
       }
-
-      // 3) Update the Score text
-      ST7735_SetCursor(0, 0); // Top left corner
-      ST7735_OutString((char *)Phrases[SCORE][myLanguage]);
-      ST7735_OutUDec(Score);
-
+      else if(GameState == GAMEOVER) {
+        ST7735_FillScreen(ST7735_BLACK);
+        ST7735_SetCursor(2, 4);
+        ST7735_OutPhrase(GAME_OVER);
+        ST7735_SetCursor(2, 6);
+        ST7735_OutPhrase(SCORE);
+        ST7735_OutUDec(Score);
+        
+        Clock_Delay1ms(2000); // Prevent accidental instant restart
+        
+        ST7735_SetCursor(0, 8);
+        ST7735_OutString((char*)"Pause Btn to Menu");
+      }
     }
   }
 }
