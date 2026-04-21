@@ -83,12 +83,12 @@ uint32_t Lives = 3;
   typedef enum {START_GAME, GAME_OVER, SCORE, LIVES} phrase_t;
 
   const char Start_English[] = "Press Jump to Start";
-  const char Start_Spanish[] = "Salta para Iniciar";
+  const char Start_Spanish[] = "Salta para Iniciar ";
 
-  const char Over_English[]  = "GAME OVER";
+  const char Over_English[]  = "GAME OVER    ";
   const char Over_Spanish[]  = "FIN DEL JUEGO";
 
-  const char Score_English[] = "Score: ";
+  const char Score_English[] = "Score:  ";
   const char Score_Spanish[] = "Puntos: ";
 
   const char Lives_English[] = "Lives: ";
@@ -187,7 +187,7 @@ void TIMG12_IRQHandler(void){//uint32_t pos,msg;
         if (pressedPause) {
           GameState = PAUSED;
         } 
-        //otherwise run normal physics
+        //otherwise run normal physics engine
         else {
 
           //sounds
@@ -197,10 +197,10 @@ void TIMG12_IRQHandler(void){//uint32_t pos,msg;
           old_skater_y = skater_y;
           old_cursor_y = cursor_y;
 
-          // Smooth Cursor Math 
+          //smooth Cursor Math 
           cursor_y = 130 - ((120 * adc_val) >> 12); 
 
-          // Discrete Skater Snapping
+          //discrete Skater Snapping
           if(adc_val < 2048) { skater_y = 130; } 
           else { skater_y = 70; }                
 
@@ -208,7 +208,7 @@ void TIMG12_IRQHandler(void){//uint32_t pos,msg;
           else if(isDucking) Skater.image = SkaterDuckImage;
           else Skater.image = SkaterNormalImage;
 
-          // Move Obstacles and check collisions
+          //move Obstacles and check collisions
           for(int i = 0; i < 3; i++){
             if(ActiveObs[i].life == alive){
               ActiveObs[i].old_x = ActiveObs[i].x;
@@ -226,6 +226,14 @@ void TIMG12_IRQHandler(void){//uint32_t pos,msg;
                   GameState = GAMEOVER; 
                   GameOverTimer = 60; 
                   Sound_GameOver(); 
+                }
+              }
+
+              //BONUS
+              if((GameState == PLAYING) && (ActiveObs[i].x < skater_x) && (ActiveObs[i].old_x >= skater_x)) {
+                //were they on the exact same track?
+                if(skater_y == ActiveObs[i].y) {
+                    Score += 250; //MASSIVE DODGE BONUS!
                 }
               }
             }
@@ -623,7 +631,8 @@ int main(void){ // final main
         //erase and redraw obstacles
         for(int i = 0; i < 3; i++){
             if(ActiveObs[i].life == alive){
-                ST7735_FillRect(ActiveObs[i].old_x, ActiveObs[i].y - 15, 3, 16, ST7735_BLACK);
+                //fix: breh breh erase 3-pixel trail on RIGHT side of 16-pixel wide sprite
+                ST7735_FillRect(ActiveObs[i].old_x + 13, ActiveObs[i].y - 15, 3, 16, ST7735_BLACK);
                 ST7735_DrawBitmap(ActiveObs[i].x, ActiveObs[i].y, ActiveObs[i].image, 16, 16);
             }
         }
@@ -632,7 +641,7 @@ int main(void){ // final main
         ST7735_DrawFastHLine(0, 70, 128, ST7735_WHITE);
         ST7735_DrawFastHLine(0, 130, 128, ST7735_WHITE);
         ST7735_DrawBitmap(skater_x, skater_y, Skater.image, 16, 16);
-        ST7735_FillRect(2, cursor_y - 2, 5, 5, ST7735_RED);  //draw red dot
+        ST7735_FillRect(2, cursor_y - 2, 5, 5, ST7735_YELLOW);  //draw yellow dot
 
         //update score
         ST7735_SetCursor(0, 0);
