@@ -80,7 +80,7 @@ uint32_t Lives = 3;
   Language_t myLanguage=English;
 
   //phrases needed for pump track pro
-  typedef enum {START_GAME, GAME_OVER, SCORE, LIVES} phrase_t;
+  typedef enum {START_GAME, GAME_OVER, SCORE, LIVES, MENU_INST, OVER_INST, PAUSED_TITLE, PAUSED_INST} phrase_t;
 
   const char Start_English[] = "Press Jump to Start";
   const char Start_Spanish[] = "Salta para Iniciar ";
@@ -94,12 +94,28 @@ uint32_t Lives = 3;
   const char Lives_English[] = "Lives: ";
   const char Lives_Spanish[] = "Vidas: ";
 
+  const char MenuInst_English[] = "Pause Btn = Language"; // 20 chars
+  const char MenuInst_Spanish[] = "Boton Pausa = Idioma"; // 20 chars
+
+  const char OverInst_English[] = "Pause Btn to Menu  "; // 19 chars
+  const char OverInst_Spanish[] = "Boton Pausa al Menu"; // 19 chars
+
+  const char PausedTitle_English[] = "** PAUSED ** ";      // 13 chars
+  const char PausedTitle_Spanish[] = "** PAUSADO **";      // 13 chars
+
+  const char PausedInst_English[] = "Pause Btn to Resume"; // 19 chars
+  const char PausedInst_Spanish[] = "Pausa para Reanudar"; // 19 chars
+
   //2D Array to map [phrase_t][Language_t]
-  const char *Phrases[4][2] = {
+  const char *Phrases[8][2] = {
     {Start_English, Start_Spanish},
     {Over_English,  Over_Spanish},
     {Score_English, Score_Spanish},
-    {Lives_English, Lives_Spanish}
+    {Lives_English, Lives_Spanish},
+    {MenuInst_English, MenuInst_Spanish},
+    {OverInst_English, OverInst_Spanish},
+    {PausedTitle_English, PausedTitle_Spanish},
+    {PausedInst_English, PausedInst_Spanish}
   };
 
   void ST7735_OutPhrase(phrase_t message){
@@ -607,7 +623,7 @@ int main(void){ // final main
         ST7735_SetCursor(0, 2);
         ST7735_OutPhrase(START_GAME); 
         ST7735_SetCursor(0, 4);
-        ST7735_OutString((char*)"Pause Btn = Language");
+        ST7735_OutPhrase(MENU_INST);
       } 
 
 
@@ -653,7 +669,7 @@ int main(void){ // final main
         ST7735_SetCursor(4, 5);
         ST7735_OutString((char*)"** PAUSED **");
         ST7735_SetCursor(1, 7);
-        ST7735_OutString((char*)"Pause Btn to Resume");
+        ST7735_OutPhrase(PAUSED_INST);
       }
       
       // --- GAME OVER SCREEN ---
@@ -666,7 +682,7 @@ int main(void){ // final main
         ST7735_OutUDec(Score);
         
         ST7735_SetCursor(0, 8);
-        ST7735_OutString((char*)"Pause Btn to Menu");
+        ST7735_OutPhrase(OVER_INST);
       }
     }
   }
